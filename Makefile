@@ -1,6 +1,6 @@
 CC       = cc
 
-CFLAGS   = -Wall -Wextra -Wpedantic -std=c99
+CFLAGS   = -Wall -Wextra -Wpedantic -std=c99 -g
 CFLAGS  += -Iinclude
 
 LDFLAGS  = -ledit
