@@ -22,18 +22,22 @@ int main(int argc, char **argv)
 	history(h, &ev, H_SETSIZE, 32);
 
 	/* Create some parsers, yo! */
-	mpc_parser_t *Number = mpc_new("number");
+	mpc_parser_t *Number   = mpc_new("number");
+	mpc_parser_t *String   = mpc_new("string");
+	mpc_parser_t *Literal  = mpc_new("literal");
 	mpc_parser_t *Operator = mpc_new("operator"); 
-	mpc_parser_t *Expr = mpc_new("expr");
-	mpc_parser_t *Lispy = mpc_new("lispy");
+	mpc_parser_t *Expr     = mpc_new("expr");
+	mpc_parser_t *Lispy    = mpc_new("lispy");
 
 	/* Define them with the following language, yo! */
 	mpca_lang(MPC_LANG_DEFAULT,
 		  "number   : /-?[0-9]+/ ;                           "
+		  "string   : '\"' /[^\"]*/ '\"' ;                   "
+		  "literal  : <string> | <number> ;                  "
 		  "operator : /[a-zA-Z-]+/ | '+' | '/' | '*';        "
-		  "expr     : <number> | '(' <operator> <expr>+ ')' ;"
-		  "lispy    : /^/ <expr> /$/ ;           ",
-		  Number, Operator, Expr, Lispy);
+		  "expr     : <literal> | '(' <operator> <expr>+ ')' ;"
+		  "lispy    : /^/ <expr>+ /$/ ;           ",
+		  Number, String, Literal, Operator, Expr, Lispy);
 
 	puts("Meowlisp Version 0.0.1");
 	puts(" \\    /\\ \n"
