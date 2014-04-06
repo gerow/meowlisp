@@ -21,7 +21,11 @@ int main(int argc, char **argv)
 	el_set(el, EL_HIST, history, h);
 	history(h, &ev, H_SETSIZE, 32);
 
-	puts("Meowlisp Version 0.0.1\n");
+	puts("Meowlisp Version 0.0.1");
+	puts(" \\    /\\ \n"
+	     "  )  ( ')\n"
+	     " (  /  ) \n"
+	     "  \\(__)| \n");
 	puts("Press Ctrl+c to Exit\n");
 
 	for (;;) {
