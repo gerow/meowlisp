@@ -3,45 +3,123 @@
 #include <histedit.h>
 #include "mpc.h"
 
+#define TYPE_NUMBER 0
+#define TYPE_ERROR 1
+
+#define LERROR_DIV_ZERO 0
+#define LERROR_BAD_OP 1
+#define LERROR_BAD_NUM 2
+
+typedef struct {
+	int type;
+	union {
+		long number;
+		int error;
+	};
+} lval_t;
+
+void lval_print(lval_t *v)
+{
+	switch (v->type) {
+		case TYPE_NUMBER:
+		printf("number: %li\n", v->number);
+		break;
+		case TYPE_ERROR:
+		switch (v->error) {
+			case LERROR_DIV_ZERO:
+			printf("error: divide by zero\n");
+			break;
+			case LERROR_BAD_OP:
+			printf("error: bad operator\n");
+			break;
+			case LERROR_BAD_NUM:
+			printf("error: bad number\n");
+			break;
+			default:
+			printf("error: unknown error\n");
+		}
+		break;
+		default:
+		printf("Invalid lval\n");
+	}
+}
+
 char *get_prompt(EditLine *el)
 {
 	return "meowlisp> ";
 }
 
-long eval_op(long x, char *op, long y)
+void eval_op(long x, char *op, long y, lval_t *res)
 {
+	res->type = TYPE_NUMBER;
+
 	if (strcmp(op, "+") == 0) {
-		return x + y;
+		res->number = x + y;
+		return;
 	}
 	if (strcmp(op, "-") == 0) {
-		return x - y;
+		res->number = x - y;
+		return;
 	}
 	if (strcmp(op, "*") == 0) {
-		return x * y;
+		res->number = x * y;
+		return;
 	}
 	if (strcmp(op, "/") == 0) {
-		return x / y;
+		if (y == 0) {
+			res->type = TYPE_ERROR;
+			res->error = LERROR_DIV_ZERO;
+			return;
+		} else {
+			res->number = x / y;
+			return;
+		}
 	}
-
-	return 0;
 }
 
-long eval(mpc_ast_t *t)
+void eval(const mpc_ast_t *t, lval_t *res)
 {
 	if(strstr(t->tag, "number")) {
-		return atoi(t->contents);
+		res->type = TYPE_NUMBER;
+		res->number = atoi(t->contents);
+		return;
 	}
 
 	char *op = t->children[1]->contents;
-	long x = eval(t->children[2]);
+
+	lval_t x;
+	eval(t->children[2], &x);
+
+	if (x.type == TYPE_ERROR) {
+		res->type = TYPE_ERROR;
+		res->error = x.error;
+		return;
+	}
+
+	int xval = x.number;
 
 	int i = 3;
 	while (strstr(t->children[i]->tag, "expr")) {
-		x = eval_op(x, op, eval(t->children[i]));
+		lval_t child_res;
+		eval(t->children[i], &child_res);
+		if (child_res.type == TYPE_ERROR) {
+			res->type = TYPE_ERROR;
+			res->error = x.error;
+			return;
+		}
+		eval_op(xval, op, child_res.number, &x);
+		if (x.type == TYPE_ERROR) {
+			res->type = TYPE_ERROR;
+			res->error = x.error;
+			return;
+		}
+
+		xval = x.number;
 		i++;
 	}
 
-	return x;
+	res->type = TYPE_NUMBER;
+	res->number = xval;
 }
 
 int main(int argc, char **argv)
@@ -98,11 +176,13 @@ int main(int argc, char **argv)
 		}
 
 		if (mpc_parse("<stdin>", input, Lispy, &r)) {
-			mpc_ast_print(r.output);
+			//mpc_ast_print(r.output);
 			ast = r.output;
-			long result = eval(ast->children[1]);
+			lval_t result;
+			eval(ast->children[1], &result);
 
-			printf("%li\n", result);
+			/* printf("%li\n", result); */
+			lval_print(&result);
 
 			mpc_ast_delete(r.output);
 		} else {
