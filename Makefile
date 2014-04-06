@@ -1,8 +1,12 @@
-CC      = cc
-CFLAGS  = -Wall -Wextra -Wpedantic -std=c99
-LDFLAGS = -ledit
+CC       = cc
 
-OBJECTS = repl.o
+CFLAGS   = -Wall -Wextra -Wpedantic -std=c99
+CFLAGS  += -Iinclude
+
+LDFLAGS  = -ledit
+
+OBJECTS  = repl.o
+OBJECTS += mpc.o
 
 .c.o:
 	$(CC) -c $(CFLAGS) $< -o $@
