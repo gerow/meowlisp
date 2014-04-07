@@ -44,82 +44,88 @@ void lval_print(lval_t *v)
 	}
 }
 
+void lval_cpy(lval_t *dst, const lval_t *src)
+{
+	memcpy(dst, src, sizeof(*dst));
+}
+
+void lval_num(lval_t *dst, long num)
+{
+	dst->type   = TYPE_NUMBER;
+	dst->number = num;
+}
+
+void lval_err(lval_t *dst, int err)
+{
+	dst->type  = TYPE_ERROR;
+	dst->error = err;
+}
+
 char *get_prompt(EditLine *el)
 {
 	return "meowlisp> ";
 }
 
-void eval_op(long x, char *op, long y, lval_t *res)
+void eval_op(lval_t *r, const lval_t *x, const char *op, const lval_t *y)
 {
-	res->type = TYPE_NUMBER;
+	if (x->type == TYPE_ERROR) {
+		lval_cpy(r, x);
+		return;
+	}
+
+	if (y->type == TYPE_ERROR) {
+		lval_cpy(r, y);
+		return;
+	}
 
 	if (strcmp(op, "+") == 0) {
-		res->number = x + y;
+		lval_num(r, x->number + y->number);
 		return;
 	}
 	if (strcmp(op, "-") == 0) {
-		res->number = x - y;
+		lval_num(r, x->number - y->number);
 		return;
 	}
 	if (strcmp(op, "*") == 0) {
-		res->number = x * y;
+		lval_num(r, x->number * y->number);
 		return;
 	}
 	if (strcmp(op, "/") == 0) {
-		if (y == 0) {
-			res->type = TYPE_ERROR;
-			res->error = LERROR_DIV_ZERO;
+		if (y->number == 0) {
+			lval_err(r, LERROR_DIV_ZERO);
 			return;
 		} else {
-			res->number = x / y;
+			lval_num(r, x->number / y->number);
 			return;
 		}
 	}
+
+	lval_err(r, LERROR_BAD_OP);
+	return;
 }
 
-void eval(const mpc_ast_t *t, lval_t *res)
+void eval(lval_t *r, const mpc_ast_t *t)
 {
 	if(strstr(t->tag, "number")) {
-		res->type = TYPE_NUMBER;
-		res->number = atoi(t->contents);
+		r->type = TYPE_NUMBER;
+		r->number = atoi(t->contents);
 		return;
 	}
 
 	char *op = t->children[1]->contents;
 
-	lval_t x;
-	eval(t->children[2], &x);
-
-	if (x.type == TYPE_ERROR) {
-		res->type = TYPE_ERROR;
-		res->error = x.error;
-		return;
-	}
-
-	int xval = x.number;
+	//lval_t x;
+	eval(r, t->children[2]);
 
 	int i = 3;
 	while (strstr(t->children[i]->tag, "expr")) {
-		lval_t child_res;
-		eval(t->children[i], &child_res);
-		if (child_res.type == TYPE_ERROR) {
-			res->type = TYPE_ERROR;
-			res->error = x.error;
-			return;
-		}
-		eval_op(xval, op, child_res.number, &x);
-		if (x.type == TYPE_ERROR) {
-			res->type = TYPE_ERROR;
-			res->error = x.error;
-			return;
-		}
-
-		xval = x.number;
+		lval_t y;
+		eval(&y, t->children[i]);
+		eval_op(r, r, op, &y);
 		i++;
 	}
 
-	res->type = TYPE_NUMBER;
-	res->number = xval;
+	return;
 }
 
 int main(int argc, char **argv)
@@ -178,11 +184,11 @@ int main(int argc, char **argv)
 		if (mpc_parse("<stdin>", input, Lispy, &r)) {
 			//mpc_ast_print(r.output);
 			ast = r.output;
-			lval_t result;
-			eval(ast->children[1], &result);
+			lval_t rval;
+			eval(&rval, ast->children[1]);
 
 			/* printf("%li\n", result); */
-			lval_print(&result);
+			lval_print(&rval);
 
 			mpc_ast_delete(r.output);
 		} else {
