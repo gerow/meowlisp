@@ -227,11 +227,10 @@ void eval_op(lval_t *r, const lval_t *x, const char *op, const lval_t *y)
 	return;
 }
 
-void eval(lval_t *r, const mpc_ast_t *t)
+void eval(lval_t *r, lval_t *t)
 {
-	if(strstr(t->tag, "number")) {
-		r->type = LVAL_NUM;
-		r->number = atoi(t->contents);
+	if(t->type = LVAL_NUM) {
+		lval_cpy(r, t);
 		return;
 	}
 
@@ -251,6 +250,120 @@ void eval(lval_t *r, const mpc_ast_t *t)
 	return;
 }
 */
+
+lval_t *lval_pop(lval_t *v, int i)
+{
+	lval_t *x = v->cell[i];
+
+	memmove(&v->cell[i],
+		&v->cell[i + 1],
+		sizeof(*v->cell) * (v->count - i - 1));
+	v->count--;
+	v->cell = realloc(v->cell, sizeof(*v->cell) * v->count);
+
+	return x;
+}
+
+lval_t *lval_builtin_op(lval_t *a, char *op)
+{
+	/* make sure all arguments are numbers */
+	for (int i = 0; i < a->count; i++) {
+		if (a->cell[i]->type != LVAL_NUM) {
+			lval_del(a);
+			return lval_err("Cannot operator on non-number!");
+		}
+	}
+
+	lval_t *x = lval_pop(a, 0);
+	/*
+	 * if there aren't any other arguments and this is subtraction
+	 * just negate the number
+	 */
+	if ((strcmp(op, "-") == 0) && a->count == 0) {
+		x->num = -x->num;
+	}
+
+	while(a->count > 0) {
+		lval_t *y = lval_pop(a, 0);
+
+		if (strcmp(op, "+") == 0) {
+			x->num = x->num + y->num;
+		}
+		if (strcmp(op, "-") == 0) {
+			x->num = x->num - y->num;
+		}
+		if (strcmp(op, "*") == 0) {
+			x->num = x->num * y->num;
+		}
+		if (strcmp(op, "/") == 0) {
+			if (y->num == 0) {
+				lval_del(x);
+				lval_del(y);
+				lval_del(a);
+				return lval_err("Division by Zero!");
+			}
+			x->num = x->num / y->num;
+		}
+
+		lval_del(y);
+	}
+
+	lval_del(a);
+
+	return x;
+}
+
+
+lval_t *lval_take(lval_t *v, int i)
+{
+	lval_t *x = lval_pop(v, i);
+	lval_del(v);
+
+	return x;
+}
+
+lval_t *lval_eval(lval_t *v);
+
+lval_t *lval_eval_sexpr(lval_t *v)
+{
+	for (int i = 0; i < v->count; i++) {
+		v->cell[i] = lval_eval(v->cell[i]);
+	}
+
+	for (int i = 0; i < v->count; i++) {
+		if (v->cell[i]->type == LVAL_ERR) {
+			return lval_take(v, i);
+		}
+	}
+
+	if (v->count == 0) {
+		return v;
+	}
+
+	if (v->count == 1) {
+		return lval_take(v, 0);
+	}
+
+	lval_t *f = lval_pop(v, 0);
+	if (f->type != LVAL_SYM) {
+		lval_del(f);
+		lval_del(v);
+		return lval_err("S-Expression does not begin with symbol!");
+	}
+
+	lval_t *res = lval_builtin_op(v, f->sym);
+	lval_del(f);
+
+	return res;
+}
+
+lval_t *lval_eval(lval_t *v) {
+	if (v->type == LVAL_SEXPR) {
+		return lval_eval_sexpr(v);
+	}
+
+	return v;
+}
 
 int main(int argc, char **argv)
 {
@@ -304,9 +417,10 @@ int main(int argc, char **argv)
 		}
 
 		if (mpc_parse("<stdin>", input, Lispy, &r)) {
-			mpc_ast_print(r.output);
+			//mpc_ast_print(r.output);
 			ast = r.output;
 			lval_t *x = lval_read(r.output);
+			x = lval_eval(x);
 			lval_println(x);
 			lval_del(x);
 			/* printf("%li\n", result); */
