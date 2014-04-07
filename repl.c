@@ -3,62 +3,184 @@
 #include <histedit.h>
 #include "mpc.h"
 
-#define TYPE_NUMBER 0
-#define TYPE_ERROR 1
+enum {
+	LVAL_ERR,
+	LVAL_NUM,
+	LVAL_SYM,
+	LVAL_EXPR,
+	LVAL_SEXPR
+};
 
-#define LERROR_DIV_ZERO 0
-#define LERROR_BAD_OP 1
-#define LERROR_BAD_NUM 2
+enum {
+	LERROR_DIV_ZERO,
+	LERROR_BAD_OP,
+	LERROR_BAD_NUM
+};
 
-typedef struct {
+typedef struct lval {
 	int type;
 	union {
-		long number;
-		int error;
+		long num;
+		char *err;
+		char *sym;
+		struct {
+			int count;
+			struct lval **cell;
+		};
 	};
 } lval_t;
-
-void lval_print(lval_t *v)
-{
-	switch (v->type) {
-		case TYPE_NUMBER:
-		printf("number: %li\n", v->number);
-		break;
-		case TYPE_ERROR:
-		switch (v->error) {
-			case LERROR_DIV_ZERO:
-			printf("error: divide by zero\n");
-			break;
-			case LERROR_BAD_OP:
-			printf("error: bad operator\n");
-			break;
-			case LERROR_BAD_NUM:
-			printf("error: bad number\n");
-			break;
-			default:
-			printf("error: unknown error\n");
-		}
-		break;
-		default:
-		printf("Invalid lval\n");
-	}
-}
 
 void lval_cpy(lval_t *dst, const lval_t *src)
 {
 	memcpy(dst, src, sizeof(*dst));
 }
 
-void lval_num(lval_t *dst, long num)
+lval_t *lval_num(long num)
 {
-	dst->type   = TYPE_NUMBER;
-	dst->number = num;
+	lval_t *v = malloc(sizeof(*v));
+	v->type   = LVAL_NUM;
+	v->num = num;
+
+	return v;
 }
 
-void lval_err(lval_t *dst, int err)
+lval_t *lval_err(char *m)
 {
-	dst->type  = TYPE_ERROR;
-	dst->error = err;
+	lval_t *v = malloc(sizeof(*v));
+	v->type  = LVAL_ERR;
+	v->err = malloc(strlen(m) + 1);
+	strcpy(v->err, m);
+
+	return v;
+}
+
+lval_t *lval_sym(char *m)
+{
+	lval_t *v = malloc(sizeof(*v));
+	v->type = LVAL_SYM;
+	v->sym = malloc(strlen(m) + 1);
+	strcpy(v->sym, m);
+
+	return v;
+}
+
+lval_t *lval_sexpr()
+{
+	lval_t *v = malloc(sizeof(*v));
+	v->type = LVAL_SEXPR;
+	v->count = 0;
+	v->cell = NULL;
+
+	return v;
+}
+
+void lval_del(lval_t *v)
+{
+	switch (v->type) {
+		case LVAL_NUM:
+		break;
+		case LVAL_ERR:
+		free(v->err);
+		break;
+		case LVAL_SYM:
+		free(v->sym);
+		break;
+		case LVAL_SEXPR:
+		for (int i = 0; i < v->count; i++) {
+			lval_del(v->cell[i]);
+		}
+		free(v->cell);
+		break;
+	}
+
+	free(v);
+}
+
+lval_t *lval_add(lval_t *v, lval_t *x)
+{
+	v->count++;
+	v->cell = realloc(v->cell, v->count * sizeof(*v->cell));
+	v->cell[v->count - 1] = x;
+
+	return v;
+}
+
+lval_t *lval_read_num(mpc_ast_t *t)
+{
+	long x = strtol(t->contents, NULL, 10);
+
+	return errno != ERANGE ? lval_num(x) : lval_err("invalid number");
+}
+
+lval_t *lval_read(mpc_ast_t *t)
+{
+	if (strstr(t->tag, "number")) {
+		return lval_read_num(t);
+	}
+	if (strstr(t->tag, "symbol")) {
+		return lval_sym(t->contents);
+	}
+
+	/* at this point it looks like an S-Expression */
+	lval_t *x = NULL;
+	if (strcmp(t->tag, ">") == 0 || strcmp(t->tag, "sexpr")) {
+		x = lval_sexpr();
+	}
+
+	for (int i = 0; i < t->children_num; i++) {
+		if (strcmp(t->children[i]->contents, "(") == 0 ||
+		    strcmp(t->children[i]->contents, ")") == 0 ||
+		    strcmp(t->children[i]->contents, "{") == 0 ||
+		    strcmp(t->children[i]->contents, "}") == 0 ||
+		    strcmp(t->children[i]->tag, "regex")  == 0) {
+			continue;
+		}
+
+		x = lval_add(x, lval_read(t->children[i]));
+	}
+
+	return x;
+}
+
+void lval_print(lval_t *v);
+
+void lval_expr_print(lval_t *v, char open, char close)
+{
+	putchar(open);
+
+	for (int i = 0; i < v->count; i++) {
+		lval_print(v->cell[i]);
+
+		if (i != v->count - 1) {
+			putchar(' ');
+		}
+	}
+
+	putchar(close);
+}
+
+void lval_print(lval_t *v)
+{
+	switch (v->type) {
+		case LVAL_NUM:
+		printf("%li", v->num);
+		break;
+		case LVAL_ERR:
+		printf("Error: %s", v->err);
+		break;
+		case LVAL_SYM:
+		printf("%s", v->sym);
+		break;
+		case LVAL_SEXPR:
+		lval_expr_print(v, '(', ')');
+		break;
+	}
+}
+
+void lval_println(lval_t *v)
+{
+	lval_print(v);
+	putchar('\n');
 }
 
 char *get_prompt(EditLine *el)
@@ -66,28 +188,29 @@ char *get_prompt(EditLine *el)
 	return "meowlisp> ";
 }
 
+/*
 void eval_op(lval_t *r, const lval_t *x, const char *op, const lval_t *y)
 {
-	if (x->type == TYPE_ERROR) {
+	if (x->type == LVAL_ERR) {
 		lval_cpy(r, x);
 		return;
 	}
 
-	if (y->type == TYPE_ERROR) {
+	if (y->type == LVAL_ERR) {
 		lval_cpy(r, y);
 		return;
 	}
 
 	if (strcmp(op, "+") == 0) {
-		lval_num(r, x->number + y->number);
+		lval_num(r, x->num + y->num);
 		return;
 	}
 	if (strcmp(op, "-") == 0) {
-		lval_num(r, x->number - y->number);
+		lval_num(r, x->num - y->num);
 		return;
 	}
 	if (strcmp(op, "*") == 0) {
-		lval_num(r, x->number * y->number);
+		lval_num(r, x->num * y->num);
 		return;
 	}
 	if (strcmp(op, "/") == 0) {
@@ -95,7 +218,7 @@ void eval_op(lval_t *r, const lval_t *x, const char *op, const lval_t *y)
 			lval_err(r, LERROR_DIV_ZERO);
 			return;
 		} else {
-			lval_num(r, x->number / y->number);
+			lval_num(r, x->num / y->num);
 			return;
 		}
 	}
@@ -107,7 +230,7 @@ void eval_op(lval_t *r, const lval_t *x, const char *op, const lval_t *y)
 void eval(lval_t *r, const mpc_ast_t *t)
 {
 	if(strstr(t->tag, "number")) {
-		r->type = TYPE_NUMBER;
+		r->type = LVAL_NUM;
 		r->number = atoi(t->contents);
 		return;
 	}
@@ -127,6 +250,7 @@ void eval(lval_t *r, const mpc_ast_t *t)
 
 	return;
 }
+*/
 
 int main(int argc, char **argv)
 {
@@ -143,21 +267,19 @@ int main(int argc, char **argv)
 
 	/* Create some parsers, yo! */
 	mpc_parser_t *Number   = mpc_new("number");
-	mpc_parser_t *String   = mpc_new("string");
-	mpc_parser_t *Literal  = mpc_new("literal");
-	mpc_parser_t *Operator = mpc_new("operator"); 
+	mpc_parser_t *Symbol   = mpc_new("symbol");
+	mpc_parser_t *Sexpr    = mpc_new("sexpr");
 	mpc_parser_t *Expr     = mpc_new("expr");
 	mpc_parser_t *Lispy    = mpc_new("lispy");
 
 	/* Define them with the following language, yo! */
 	mpca_lang(MPC_LANG_DEFAULT,
-		  "number   : /-?[0-9]+/ ;                           "
-		  "string   : '\"' /[^\"]*/ '\"' ;                   "
-		  "literal  : <string> | <number> ;                  "
-		  "operator : /[a-zA-Z-]+/ | '+' | '/' | '*';        "
-		  "expr     : <literal> | '(' <operator> <expr>+ ')' ;"
-		  "lispy    : /^/ <expr>+ /$/ ;           ",
-		  Number, String, Literal, Operator, Expr, Lispy);
+		  "number   : /-?[0-9]+/ ;                    "
+		  "symbol   : '+' | '-' | '*' | '/' ;         "
+		  "sexpr    : '(' <expr>* ')' ;                "
+		  "expr     : <number> | <symbol> | <sexpr> ; "
+		  "lispy    : /^/ <expr>* /$/ ;               ",
+		  Number, Symbol, Sexpr, Expr, Lispy);
 
 	puts("Meowlisp Version 0.0.1");
 	puts(" \\    /\\ \n"
@@ -182,14 +304,12 @@ int main(int argc, char **argv)
 		}
 
 		if (mpc_parse("<stdin>", input, Lispy, &r)) {
-			//mpc_ast_print(r.output);
+			mpc_ast_print(r.output);
 			ast = r.output;
-			lval_t rval;
-			eval(&rval, ast->children[1]);
-
+			lval_t *x = lval_read(r.output);
+			lval_println(x);
+			lval_del(x);
 			/* printf("%li\n", result); */
-			lval_print(&rval);
-
 			mpc_ast_delete(r.output);
 		} else {
 			mpc_err_print(r.error);
@@ -199,7 +319,7 @@ int main(int argc, char **argv)
 
 	el_end(el);
 	history_end(h);
-	mpc_cleanup(6, Number, String, Literal, Operator, Expr, Lispy);
+	mpc_cleanup(5, Number, Symbol, Sexpr, Expr, Lispy);
 
 	return 0;
 }
