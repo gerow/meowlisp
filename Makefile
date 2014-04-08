@@ -7,6 +7,7 @@ LDFLAGS  = -ledit
 
 OBJECTS  = repl.o
 OBJECTS += mpc.o
+OBJECTS += meowlisp.o
 
 .c.o:
 	$(CC) -c $(CFLAGS) $< -o $@
