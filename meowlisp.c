@@ -86,7 +86,7 @@ static int meowlisp_parse(mpc_result_t *r, const char *input)
 	/* Define them with the following language, yo! */
 	mpca_lang(MPC_LANG_DEFAULT,
 		  "number   : /-?[0-9]+/ ;                    "
-		  "symbol   : '+' | '-' | '*' | '/' ;         "
+		  "symbol   : '+' | '-' | '*' | '/' | '%' ;         "
 		  "sexpr    : '(' <expr>* ')' ;               "
 		  "expr     : <number> | <symbol> | <sexpr> ; "
 		  "lispy    : /^/ <expr>* /$/ ;               ",
@@ -268,6 +268,15 @@ static lval_t *lval_builtin_op(lval_t *a, char *op)
 				return lval_err("Division by Zero!");
 			}
 			x->num = x->num / y->num;
+		}
+		if (strcmp(op, "%") == 0) {
+			if (y->num == 0) {
+				lval_del(x);
+				lval_del(y);
+				lval_del(a);
+				return lval_err("Division (mod) by Zero!");
+			}
+			x->num = x->num % y->num;
 		}
 
 		lval_del(y);
