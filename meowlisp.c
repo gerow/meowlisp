@@ -16,6 +16,8 @@ static lval_t *lval_pop(lval_t *v, int i);
 static lval_t *lval_builtin_op(lval_t *a, char *op);
 static lval_t *builtin_head(lval_t *v);
 static lval_t *builtin_tail(lval_t *v);
+static lval_t *builtin_list(lval_t *v);
+static lval_t *builtin_eval(lval_t *v);
 static lval_t *lval_take(lval_t *v, int i);
 static lval_t *lval_eval_sexpr(lval_t *v);
 
@@ -264,6 +266,12 @@ static lval_t *lval_builtin_op(lval_t *a, char *op)
 	if (strcmp(op, "tail") == 0) {
 		return builtin_tail(a);
 	}
+	if (strcmp(op, "list") == 0) {
+		return builtin_list(a);
+	}
+	if (strcmp(op, "eval") == 0) {
+		return builtin_eval(a);
+	}
 	/* make sure all arguments are numbers */
 	for (int i = 0; i < a->count; i++) {
 		if (a->cell[i]->type != LVAL_NUM) {
@@ -348,6 +356,23 @@ static lval_t *builtin_tail(lval_t *a)
 	return v;
 }
 
+static lval_t *builtin_list(lval_t *a)
+{
+	a->type = LVAL_QEXPR;
+
+	return a;
+}
+
+static lval_t *builtin_eval(lval_t *a)
+{
+	LASSERT(a, (a->count == 1), "Function 'eval' passed too many arguments!");
+	LASSERT(a, (a->cell[0]->type == LVAL_QEXPR), "Function 'eval' passed incorrect type!");
+
+	lval_t *x = lval_take(a, 0);
+	x->type = LVAL_SEXPR;
+
+	return lval_eval(x);
+}
 
 static lval_t *lval_take(lval_t *v, int i)
 {
