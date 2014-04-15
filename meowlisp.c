@@ -7,14 +7,23 @@ static lval_t *lval_num(long num);
 static lval_t *lval_err(char *m);
 static lval_t *lval_sym(char *m);
 static lval_t *lval_sexpr();
+static lval_t *lval_qexpr();
 static lval_t *lval_add(lval_t *v, lval_t *x);
 static lval_t *lval_read_num(mpc_ast_t *t);
 static void lval_expr_print(lval_t *v, char open, char close);
 static void lval_print(const lval_t *v);
 static lval_t *lval_pop(lval_t *v, int i);
 static lval_t *lval_builtin_op(lval_t *a, char *op);
+static lval_t *builtin_head(lval_t *v);
+static lval_t *builtin_tail(lval_t *v);
 static lval_t *lval_take(lval_t *v, int i);
 static lval_t *lval_eval_sexpr(lval_t *v);
+
+#define LASSERT(args, cond, err)      \
+	if (!(cond)) {                \
+		lval_del(args);       \
+		return lval_err(err); \
+	}
 
 lval_t *lval_read(const char *input)
 {
@@ -62,6 +71,7 @@ void lval_del(lval_t *v)
 		free(v->sym);
 		break;
 		case LVAL_SEXPR:
+		case LVAL_QEXPR:
 		for (int i = 0; i < v->count; i++) {
 			lval_del(v->cell[i]);
 		}
@@ -80,20 +90,22 @@ static int meowlisp_parse(mpc_result_t *r, const char *input)
 	mpc_parser_t *Number   = mpc_new("number");
 	mpc_parser_t *Symbol   = mpc_new("symbol");
 	mpc_parser_t *Sexpr    = mpc_new("sexpr");
+	mpc_parser_t *Qexpr    = mpc_new("qexpr");
 	mpc_parser_t *Expr     = mpc_new("expr");
 	mpc_parser_t *Lispy    = mpc_new("lispy");
 
 	/* Define them with the following language, yo! */
 	mpca_lang(MPC_LANG_DEFAULT,
-		  "number   : /-?[0-9]+/ ;                    "
-		  "symbol   : '+' | '-' | '*' | '/' | '%' ;         "
-		  "sexpr    : '(' <expr>* ')' ;               "
-		  "expr     : <number> | <symbol> | <sexpr> ; "
-		  "lispy    : /^/ <expr>* /$/ ;               ",
-		  Number, Symbol, Sexpr, Expr, Lispy);
+		  "number   : /-?[0-9]+/ ;                              "
+		  "symbol   : \"list\" | \"head\" | \"tail\" | \"join\" | \"eval\" | '+' | '-' | '*' | '/' | '%' ;             "
+		  "sexpr    : '(' <expr>* ')' ;                         "
+		  "qexpr    : '{' <expr>* '}' ;                         "
+		  "expr     : <number> | <symbol> | <sexpr> | <qexpr> ; "
+		  "lispy    : /^/ <expr>* /$/ ;                         ",
+		  Number, Symbol, Sexpr, Qexpr, Expr, Lispy);
 
 	int ret = mpc_parse("<stdin>", input, Lispy, r);
-	mpc_cleanup(5, Number, Symbol, Sexpr, Expr, Lispy);
+	mpc_cleanup(6, Number, Symbol, Sexpr, Qexpr, Expr, Lispy);
 
 	return ret;
 }
@@ -109,8 +121,10 @@ static lval_t *lval_read_tag(mpc_ast_t *t)
 
 	/* at this point it looks like an S-Expression */
 	lval_t *x = NULL;
-	if (strcmp(t->tag, ">") == 0 || strcmp(t->tag, "sexpr")) {
+	if (strcmp(t->tag, ">") == 0 || strstr(t->tag, "sexpr")) {
 		x = lval_sexpr();
+	} else if (strstr(t->tag, "qexpr")) {
+		x = lval_qexpr();
 	}
 
 	for (int i = 0; i < t->children_num; i++) {
@@ -167,6 +181,16 @@ static lval_t *lval_sexpr()
 	return v;
 }
 
+static lval_t *lval_qexpr()
+{
+	lval_t *v = malloc(sizeof(*v));
+	v->type = LVAL_QEXPR;
+	v->count = 0;
+	v->cell = NULL;
+
+	return v;
+}
+
 static lval_t *lval_add(lval_t *v, lval_t *x)
 {
 	v->count++;
@@ -213,6 +237,9 @@ static void lval_print(const lval_t *v)
 		case LVAL_SEXPR:
 		lval_expr_print(v, '(', ')');
 		break;
+		case LVAL_QEXPR:
+		lval_expr_print(v, '{', '}');
+		break;
 	}
 }
 
@@ -231,6 +258,12 @@ static lval_t *lval_pop(lval_t *v, int i)
 
 static lval_t *lval_builtin_op(lval_t *a, char *op)
 {
+	if (strcmp(op, "head") == 0) {
+		return builtin_head(a);
+	}
+	if (strcmp(op, "tail") == 0) {
+		return builtin_tail(a);
+	}
 	/* make sure all arguments are numbers */
 	for (int i = 0; i < a->count; i++) {
 		if (a->cell[i]->type != LVAL_NUM) {
@@ -286,6 +319,35 @@ static lval_t *lval_builtin_op(lval_t *a, char *op)
 
 	return x;
 }
+
+static lval_t *builtin_head(lval_t *a)
+{
+	LASSERT(a, (a->count == 1), "Function 'head' passed too many arguments!");
+	LASSERT(a, (a->cell[0]->type == LVAL_QEXPR), "Function 'head' passed incorrect types!");
+	LASSERT(a, (a->cell[0]->count != 0), "Function 'head' passed {}!");
+
+	lval_t *v = lval_take(a, 0);
+
+	while (v->count > 1) {
+		lval_del(lval_pop(v, 1));
+	}
+
+	return v;
+}
+
+static lval_t *builtin_tail(lval_t *a)
+{
+	LASSERT(a, (a->count == 1), "Function 'tail' passed too many arguments!");
+	LASSERT(a, (a->cell[0]->type == LVAL_QEXPR), "Function 'tail' passed incorrect types!");
+	LASSERT(a, (a->cell[0]->count != 0), "Function 'tail' passed {}!");
+
+	lval_t *v = lval_take(a, 0);
+
+	lval_del(lval_pop(v, 0));
+
+	return v;
+}
+
 
 static lval_t *lval_take(lval_t *v, int i)
 {
