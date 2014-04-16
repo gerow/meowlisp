@@ -27,6 +27,7 @@ static lval_t *builtin_add(lenv_t *e,lval_t *v);
 static lval_t *builtin_sub(lenv_t *e,lval_t *v);
 static lval_t *builtin_mul(lenv_t *e,lval_t *v);
 static lval_t *builtin_div(lenv_t *e,lval_t *v);
+static lval_t *builtin_mod(lenv_t *e,lval_t *v);
 static lval_t *builtin_join(lenv_t *e, lval_t *a);
 static lval_t *lval_join(lval_t *x, lval_t *y);
 static lval_t *lval_take(lval_t *v, int i);
@@ -126,6 +127,7 @@ void lenv_add_builtins(lenv_t *e)
 	lenv_add_builtin(e, "-", builtin_sub);
 	lenv_add_builtin(e, "*", builtin_mul);
 	lenv_add_builtin(e, "/", builtin_div);
+	lenv_add_builtin(e, "%", builtin_mod);
 }
 
 lenv_t *lenv_new(void)
@@ -168,7 +170,7 @@ static int meowlisp_parse(mpc_result_t *r, const char *input)
 	/* Define them with the following language, yo! */
 	mpca_lang(MPC_LANG_DEFAULT,
 		  "number   : /-?[0-9]+/ ;                              "
-		  "symbol   : /[a-zA-Z0-9_+\\-*\\/\\\\=<>!&]+/ ;        "
+		  "symbol   : /[a-zA-Z0-9_+\\-*\\/\\\\=<>!&%]+/ ;        "
 		  "sexpr    : '(' <expr>* ')' ;                         "
 		  "qexpr    : '{' <expr>* '}' ;                         "
 		  "expr     : <number> | <symbol> | <sexpr> | <qexpr> ; "
@@ -558,6 +560,11 @@ static lval_t *builtin_mul(lenv_t *e,lval_t *v)
 static lval_t *builtin_div(lenv_t *e,lval_t *v)
 {
 	return builtin_op(e, v, "/");
+}
+
+static lval_t *builtin_mod(lenv_t *e,lval_t *v)
+{
+	return builtin_op(e, v, "%");
 }
 
 static lval_t *builtin_join(lenv_t *e, lval_t *a)
