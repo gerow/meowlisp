@@ -18,6 +18,8 @@ static lval_t *builtin_head(lval_t *v);
 static lval_t *builtin_tail(lval_t *v);
 static lval_t *builtin_list(lval_t *v);
 static lval_t *builtin_eval(lval_t *v);
+static lval_t *builtin_join(lval_t *v);
+static lval_t *lval_join(lval_t *x, lval_t *y);
 static lval_t *lval_take(lval_t *v, int i);
 static lval_t *lval_eval_sexpr(lval_t *v);
 
@@ -272,6 +274,9 @@ static lval_t *lval_builtin_op(lval_t *a, char *op)
 	if (strcmp(op, "eval") == 0) {
 		return builtin_eval(a);
 	}
+	if (strcmp(op, "join") == 0) {
+		return builtin_join(a);
+	}
 	/* make sure all arguments are numbers */
 	for (int i = 0; i < a->count; i++) {
 		if (a->cell[i]->type != LVAL_NUM) {
@@ -372,6 +377,33 @@ static lval_t *builtin_eval(lval_t *a)
 	x->type = LVAL_SEXPR;
 
 	return lval_eval(x);
+}
+
+static lval_t *builtin_join(lval_t *a)
+{
+	for (int i = 0; i < a->count; i++) {
+		LASSERT(a, (a->cell[i]->type == LVAL_QEXPR), "Function 'join' passed incorrect type!");
+	}
+
+	lval_t *x = lval_pop(a, 0);
+
+	while (a->count) {
+		x = lval_join(x, lval_pop(a, 0));
+	}
+
+	lval_del(a);
+	return x;
+}
+
+static lval_t *lval_join(lval_t *x, lval_t *y)
+{
+	while (y->count) {
+		x = lval_add(x, lval_pop(y, 0));
+	}
+
+	lval_del(y);
+
+	return x;
 }
 
 static lval_t *lval_take(lval_t *v, int i)
