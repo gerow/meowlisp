@@ -13,7 +13,8 @@ static lval_t *lval_read_num(mpc_ast_t *t);
 static void lval_expr_print(lval_t *v, char open, char close);
 static void lval_print(const lval_t *v);
 static lval_t *lval_pop(lval_t *v, int i);
-static lval_t *lval_builtin_op(lval_t *a, char *op);
+static lval_t *builtin(lval_t *a, char *func);
+static lval_t *builtin_op(lval_t *a, char *op);
 static lval_t *builtin_head(lval_t *v);
 static lval_t *builtin_tail(lval_t *v);
 static lval_t *builtin_list(lval_t *v);
@@ -260,23 +261,33 @@ static lval_t *lval_pop(lval_t *v, int i)
 	return x;
 }
 
-static lval_t *lval_builtin_op(lval_t *a, char *op)
+static lval_t *builtin(lval_t *a, char *func)
 {
-	if (strcmp(op, "head") == 0) {
+	if (strcmp(func, "head") == 0) {
 		return builtin_head(a);
 	}
-	if (strcmp(op, "tail") == 0) {
+	if (strcmp(func, "tail") == 0) {
 		return builtin_tail(a);
 	}
-	if (strcmp(op, "list") == 0) {
+	if (strcmp(func, "list") == 0) {
 		return builtin_list(a);
 	}
-	if (strcmp(op, "eval") == 0) {
+	if (strcmp(func, "eval") == 0) {
 		return builtin_eval(a);
 	}
-	if (strcmp(op, "join") == 0) {
+	if (strcmp(func, "join") == 0) {
 		return builtin_join(a);
 	}
+	if (strstr("+-/*%", func)) {
+		return builtin_op(a, func);
+	}
+
+	lval_del(a);
+	return lval_err("Unknown function!");
+}
+
+static lval_t *builtin_op(lval_t *a, char *op)
+{
 	/* make sure all arguments are numbers */
 	for (int i = 0; i < a->count; i++) {
 		if (a->cell[i]->type != LVAL_NUM) {
@@ -441,7 +452,7 @@ static lval_t *lval_eval_sexpr(lval_t *v)
 		return lval_err("S-Expression does not begin with symbol!");
 	}
 
-	lval_t *res = lval_builtin_op(v, f->sym);
+	lval_t *res = builtin(v, f->sym);
 	lval_del(f);
 
 	return res;
