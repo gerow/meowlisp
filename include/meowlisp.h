@@ -27,11 +27,17 @@ struct lval {
 			int count;
 			struct lval **cell;
 		};
-		lbuiltin_t fun;
+		struct {
+			lenv_t *env;
+			lval_t *formals;
+			lval_t *body;
+			lbuiltin_t builtin;
+		};
 	};
 };
 
 struct lenv {
+	lenv_t *par;
 	int count;
 	char **syms;
 	lval_t **vals;
