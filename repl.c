@@ -14,6 +14,9 @@ int main(int argc, char **argv)
 {
 	int ret;
 
+	lenv_t *e = lenv_new();
+	lenv_add_builtins(e);
+
 	History *h =  history_init();
 	HistEvent ev;
 
@@ -44,7 +47,7 @@ int main(int argc, char **argv)
 		}
 
 		lval_t *v = lval_read(input);
-		v = lval_eval(v);
+		v = lval_eval(e, v);
 		lval_println(v);
 		lval_del(v);
 	}
