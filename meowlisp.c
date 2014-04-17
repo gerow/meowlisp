@@ -402,6 +402,20 @@ static lval_t *lval_call(lenv_t *e, lval_t *f, lval_t *a)
 		/* Pop the first symbol from the formals */
 		lval_t *sym = lval_pop(f->formals, 0);
 
+		if (strcmp(sym->sym, "&") == 0) {
+			if (f->formals->count != 1) {
+				lval_del(a);
+				return lval_err("Function format invalid. Symbol '&' not followed by single symbol.");
+			}
+
+			/* next formal should be bound to remaining arguments */
+			lval_t *nsym = lval_pop(f->formals, 0);
+			lenv_put(f->env, nsym, builtin_list(e, a));
+			lval_del(sym);
+			lval_del(nsym);
+			break;
+		}
+
 		/* Pop the next argument from the list */
 		lval_t *val = lval_pop(a, 0);
 
@@ -415,6 +429,28 @@ static lval_t *lval_call(lenv_t *e, lval_t *f, lval_t *a)
 
 	/* we've completely bound the argument list, so we can clean it up */
 	lval_del(a);
+
+	/*
+	 * check to see if only a varargs remains. If so, consider the function
+	 * resolved and don't do any currying. Just call it with an empty list
+	 */
+	if (f->formals->count > 0 &&
+	    strcmp(f->formals->cell[0]->sym, "&") == 0) {
+	    	if (f->formals->count != 2) {
+	    		return lval_err("Function format invalid. Symbol '&' not followed by a single symbol.");
+	    	}
+	    	/* Pop and delete '&' symbol */
+	    	lval_del(lval_pop(f->formals, 0));
+
+	    	/* Pop next symbol and create empty list */
+	    	lval_t *sym = lval_pop(f->formals, 0);
+	    	lval_t *val = lval_qexpr();
+
+	    	/* Bind to environment and delete */
+	    	lenv_put(f->env, sym, val);
+	    	lval_del(sym);
+	    	lval_del(val);
+	}
 
 	/* If all formals have been evaluated */
 	if (f->formals->count == 0) {
