@@ -14,6 +14,7 @@ static lval_t *lval_lambda(lval_t *formals, lval_t *body);
 static lval_t *lval_add(lval_t *v, lval_t *x);
 static lval_t *lval_read_num(mpc_ast_t *t);
 static lval_t *lval_copy(lval_t *v);
+static lval_t *lval_call(lenv_t *e, lval_t *f, lval_t *a);
 static lval_t *lenv_get(lenv_t *e, lval_t *v);
 static void lenv_put(lenv_t *e, lval_t *k, lval_t *v);
 static void lenv_def(lenv_t *e, lval_t *k, lval_t *v);
@@ -380,6 +381,54 @@ static lval_t *lval_copy(lval_t *v)
 	return x;
 }
 
+static lval_t *lval_call(lenv_t *e, lval_t *f, lval_t *a)
+{
+	/* if this is a builtin just do that! */
+	if (f->builtin) {
+		return f->builtin(e, a);
+	}
+
+	int given = a->count;
+	int total = f->formals->count;
+
+	/* while we still have arguments to bind */
+	while (a->count) {
+		/* if we've run out of formals to bind.. oh noes! */
+		if (f->formals->count == 0) {
+			lval_del(a);
+			return lval_err("Function passed too many arguments. Got %i, Expected %i.", given, total);
+		}
+
+		/* Pop the first symbol from the formals */
+		lval_t *sym = lval_pop(f->formals, 0);
+
+		/* Pop the next argument from the list */
+		lval_t *val = lval_pop(a, 0);
+
+		/* Bind a copy into the function's environment */
+		lenv_put(f->env, sym, val);
+
+		/* Delete the symbol and the value */
+		lval_del(sym);
+		lval_del(val);
+	}
+
+	/* we've completely bound the argument list, so we can clean it up */
+	lval_del(a);
+
+	/* If all formals have been evaluated */
+	if (f->formals->count == 0) {
+		/* Set Function Environment parent to current evaluation Environment */
+		f->env->par = e;
+
+		/* Evaluate and return */
+		return builtin_eval(f->env, lval_add(lval_sexpr(), lval_copy(f->body)));
+	}
+
+	/* Otherwise return partially evaluated function */
+	return lval_copy(f);
+}
+
 static lval_t *lenv_get(lenv_t *e, lval_t *v)
 {
 	for (int i = 0; i < e->count; i++) {
@@ -428,8 +477,8 @@ static lenv_t *lenv_copy(lenv_t *e)
 {
 	lenv_t *n = malloc(sizeof(*n));
 
-	n->par = e;
-	n->count = 0;
+	n->par = e->par;
+	n->count = e->count;
 
 	n->syms = malloc(sizeof(*n->syms) * n->count);
 	n->vals = malloc(sizeof(*n->vals) * n->count);
@@ -783,7 +832,7 @@ static lval_t *lval_eval_sexpr(lenv_t *e, lval_t *v)
 		return err;
 	}
 
-	lval_t *res = f->builtin(e, v);
+	lval_t *res = lval_call(e, f, v);
 	lval_del(f);
 
 	return res;
