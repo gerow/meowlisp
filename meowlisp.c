@@ -46,6 +46,7 @@ static lval_t *builtin_gt(lenv_t *e, lval_t *a);
 static lval_t *builtin_lt(lenv_t *e, lval_t *a);
 static lval_t *builtin_ge(lenv_t *e, lval_t *a);
 static lval_t *builtin_le(lenv_t *e, lval_t *a);
+static lval_t *builtin_if(lenv_t *e, lval_t *a);
 static lval_t *builtin_var(lenv_t *e, lval_t *a, char *func);
 static lval_t *lval_join(lval_t *x, lval_t *y);
 static lval_t *lval_take(lval_t *v, int i);
@@ -171,6 +172,9 @@ void lenv_add_builtins(lenv_t *e)
 	lenv_add_builtin(e, "<",  builtin_lt);
 	lenv_add_builtin(e, ">=", builtin_ge);
 	lenv_add_builtin(e, "<=", builtin_le);
+
+	/* Conditional */
+	lenv_add_builtin(e, "if", builtin_if);
 }
 
 lenv_t *lenv_new(void)
@@ -949,6 +953,30 @@ static lval_t *builtin_ge(lenv_t *e, lval_t *a)
 static lval_t *builtin_le(lenv_t *e, lval_t *a)
 {
 	return builtin_ord(e, a, "<=");
+}
+
+static lval_t *builtin_if(lenv_t *e, lval_t *a)
+{
+	LASSERT(a, a->count == 3, "Function 'if' got wrong number of arguments. Got %i, Expected 3.", a->count);
+
+	LASSERT_TYPE(a, "if", a->cell[0]->type, LVAL_NUM);
+	LASSERT_TYPE(a, "if", a->cell[1]->type, LVAL_QEXPR);
+	LASSERT_TYPE(a, "if", a->cell[2]->type, LVAL_QEXPR);
+
+	lval_t *x;
+	/* mark both as S-Expressions to make them evaluabl */
+	a->cell[1]->type = LVAL_SEXPR;
+	a->cell[2]->type = LVAL_SEXPR;
+
+	if (a->cell[0]->num) {
+		x = lval_eval(e, lval_pop(a, 1));
+	} else {
+		x = lval_eval(e, lval_pop(a, 2));
+	}
+
+	lval_del(a);
+
+	return x;
 }
 
 static lval_t *lval_join(lval_t *x, lval_t *y)
