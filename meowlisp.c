@@ -15,6 +15,7 @@ static lval_t *lval_add(lval_t *v, lval_t *x);
 static lval_t *lval_read_num(mpc_ast_t *t);
 static lval_t *lval_copy(lval_t *v);
 static lval_t *lval_call(lenv_t *e, lval_t *f, lval_t *a);
+static int lval_eq(lval_t *l, lval_t *r);
 static lval_t *lenv_get(lenv_t *e, lval_t *v);
 static void lenv_put(lenv_t *e, lval_t *k, lval_t *v);
 static void lenv_def(lenv_t *e, lval_t *k, lval_t *v);
@@ -37,6 +38,12 @@ static lval_t *builtin_join(lenv_t *e, lval_t *a);
 static lval_t *builtin_def(lenv_t *e, lval_t *a);
 static lval_t *builtin_put(lenv_t *e, lval_t *a);
 static lval_t *builtin_lambda(lenv_t *e, lval_t *a);
+static lval_t *builtin_ord(lenv_t *e, lval_t *a, char *op);
+static lval_t *builtin_eq(lenv_t *e, lval_t *a);
+static lval_t *builtin_gt(lenv_t *e, lval_t *a);
+static lval_t *builtin_lt(lenv_t *e, lval_t *a);
+static lval_t *builtin_ge(lenv_t *e, lval_t *a);
+static lval_t *builtin_le(lenv_t *e, lval_t *a);
 static lval_t *builtin_var(lenv_t *e, lval_t *a, char *func);
 static lval_t *lval_join(lval_t *x, lval_t *y);
 static lval_t *lval_take(lval_t *v, int i);
@@ -154,6 +161,13 @@ void lenv_add_builtins(lenv_t *e)
 
 	/* Lambdas */
 	lenv_add_builtin(e, "\\", builtin_lambda);
+
+	/* Comparison */
+	lenv_add_builtin(e, "==", builtin_eq);
+	lenv_add_builtin(e, ">",  builtin_gt);
+	lenv_add_builtin(e, "<",  builtin_lt);
+	lenv_add_builtin(e, ">=", builtin_ge);
+	lenv_add_builtin(e, "<=", builtin_le);
 }
 
 lenv_t *lenv_new(void)
@@ -463,6 +477,43 @@ static lval_t *lval_call(lenv_t *e, lval_t *f, lval_t *a)
 
 	/* Otherwise return partially evaluated function */
 	return lval_copy(f);
+}
+
+static int lval_eq(lval_t *l, lval_t *r)
+{
+	/* different types are not equal */
+	if (l->type != r->type) {
+		return 0;
+	}
+
+	switch (l->type) {
+	case LVAL_ERR:
+		return strcmp(l->err, r->err) == 0;
+	case LVAL_NUM:
+		return l->num == r->num;
+	case LVAL_SYM:
+		return strcmp(l->sym, r->sym) == 0;
+		break;
+	case LVAL_FUN:
+		if (l->builtin || r->builtin) {
+			return l->builtin == r->builtin;
+		}
+		return lval_eq(l->formals, r->formals) && lval_eq(l->body, r->body);
+	case LVAL_SEXPR:
+	case LVAL_QEXPR:
+		if (l->count != r->count) {
+			return 0;
+		}
+		for (int i = 0; i < l->count; i++) {
+			if (!lval_eq(l->cell[i], r->cell[i])) {
+				return 0;
+			}
+		}
+
+		return 1;
+	}
+
+	return 0;
 }
 
 static lval_t *lenv_get(lenv_t *e, lval_t *v)
@@ -816,6 +867,71 @@ static lval_t *builtin_lambda(lenv_t *e, lval_t *a)
 	lval_del(a);
 
 	return lval_lambda(formals, body);
+}
+
+static lval_t *builtin_ord(lenv_t *e, lval_t *a, char *op)
+{
+	LASSERT(a, a->count == 2, "Function '%s' wrong number of arguments. Got %i, Expected %i.", op, a->count, 2);
+
+	LASSERT_TYPE(a, op, a->cell[0]->type, LVAL_NUM);
+	LASSERT_TYPE(a, op, a->cell[1]->type, LVAL_NUM);
+
+	lval_t *l = lval_pop(a, 0);
+	lval_t *r = lval_pop(a, 0);
+
+	int res = 0;
+
+	if (strcmp(op, ">") == 0) {
+		res = l->num > r->num;
+	} else if (strcmp(op, "<") == 0) {
+		res = l->num < r->num;
+	} else if (strcmp(op, ">=") == 0) {
+		res = l->num >= r->num;
+	} else if (strcmp(op, "<=") == 0) {
+		res = l->num <= r->num;
+	}
+
+	lval_del(l);
+	lval_del(r);
+	lval_del(a);
+
+	return lval_num(res);
+}
+
+static lval_t *builtin_eq(lenv_t *e, lval_t *a)
+{
+	LASSERT(a, a->count == 2, "Function '==' wrong number of arguments. Got %d, Expected 2", a->count);
+
+	lval_t *left  = lval_pop(a, 0);
+	lval_t *right = lval_pop(a, 0);
+
+	int res = lval_eq(left, right);
+
+	lval_del(left);
+	lval_del(right);
+	lval_del(a);
+
+	return lval_num(res);
+}
+
+static lval_t *builtin_gt(lenv_t *e, lval_t *a)
+{
+	return builtin_ord(e, a, ">");
+}
+
+static lval_t *builtin_lt(lenv_t *e, lval_t *a)
+{
+	return builtin_ord(e, a, "<");
+}
+
+static lval_t *builtin_ge(lenv_t *e, lval_t *a)
+{
+	return builtin_ord(e, a, ">=");
+}
+
+static lval_t *builtin_le(lenv_t *e, lval_t *a)
+{
+	return builtin_ord(e, a, "<=");
 }
 
 static lval_t *lval_join(lval_t *x, lval_t *y)
