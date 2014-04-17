@@ -1,7 +1,8 @@
 CC       = cc
 
-CFLAGS   = -Wall -Wextra -Wpedantic -std=c99 -g
-CFLAGS  += -Iinclude
+CFLAGS   = -Wall -Wextra -Wpedantic -std=c11 -g
+CFLAGS  += -Iinclude -Wno-c11-extensions
+CFLAGS  += -Wno-gnu-zero-variadic-macro-arguments
 
 LDFLAGS  = -ledit
 
