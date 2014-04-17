@@ -39,7 +39,9 @@ static lval_t *builtin_def(lenv_t *e, lval_t *a);
 static lval_t *builtin_put(lenv_t *e, lval_t *a);
 static lval_t *builtin_lambda(lenv_t *e, lval_t *a);
 static lval_t *builtin_ord(lenv_t *e, lval_t *a, char *op);
+static lval_t *builtin_eqneq(lenv_t *e, lval_t *a, char *op);
 static lval_t *builtin_eq(lenv_t *e, lval_t *a);
+static lval_t *builtin_ne(lenv_t *e, lval_t *a);
 static lval_t *builtin_gt(lenv_t *e, lval_t *a);
 static lval_t *builtin_lt(lenv_t *e, lval_t *a);
 static lval_t *builtin_ge(lenv_t *e, lval_t *a);
@@ -164,6 +166,7 @@ void lenv_add_builtins(lenv_t *e)
 
 	/* Comparison */
 	lenv_add_builtin(e, "==", builtin_eq);
+	lenv_add_builtin(e, "!=", builtin_ne);
 	lenv_add_builtin(e, ">",  builtin_gt);
 	lenv_add_builtin(e, "<",  builtin_lt);
 	lenv_add_builtin(e, ">=", builtin_ge);
@@ -898,7 +901,7 @@ static lval_t *builtin_ord(lenv_t *e, lval_t *a, char *op)
 	return lval_num(res);
 }
 
-static lval_t *builtin_eq(lenv_t *e, lval_t *a)
+static lval_t *builtin_eqneq(lenv_t *e, lval_t *a, char *op)
 {
 	LASSERT(a, a->count == 2, "Function '==' wrong number of arguments. Got %d, Expected 2", a->count);
 
@@ -911,7 +914,21 @@ static lval_t *builtin_eq(lenv_t *e, lval_t *a)
 	lval_del(right);
 	lval_del(a);
 
+	if (strcmp(op, "!=") == 0) {
+		res = !res;
+	}
+
 	return lval_num(res);
+}
+
+static lval_t *builtin_eq(lenv_t *e, lval_t *a)
+{
+	return builtin_eqneq(e, a, "==");
+}
+
+static lval_t *builtin_ne(lenv_t *e, lval_t *a)
+{
+	return builtin_eqneq(e, a, "!=");
 }
 
 static lval_t *builtin_gt(lenv_t *e, lval_t *a)
